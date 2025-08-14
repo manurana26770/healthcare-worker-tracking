@@ -37,14 +37,12 @@ export function Auth0Provider({ children }: { children: React.ReactNode }) {
 
   // Check session on mount, but respect logout parameter
   useEffect(() => {
-    // Check if user just logged out (don't check session in this case)
     const timer = setTimeout(() => {
-      // Check if user just logged out (don't check session in this case)
       const urlParams = new URLSearchParams(window.location.search);
       const justLoggedOut = urlParams.get('logout') === 'true';
       
       if (justLoggedOut) {
-        // Ensure user state is null
+        // Ensure user state is null and clear any cached data
         setUser(null);
         
         // Clear the logout parameter from URL
@@ -53,12 +51,17 @@ export function Auth0Provider({ children }: { children: React.ReactNode }) {
         newUrl.searchParams.delete('t');
         window.history.replaceState({}, '', newUrl.toString());
         
+        // Clear any cached session data
+        localStorage.removeItem('auth0_user');
+        sessionStorage.removeItem('auth0_user');
+        
         setIsLoading(false);
         return;
       }
       
+      // Only check session if not just logged out
       checkSession();
-    }, 100);
+    }, 200); // Increased delay to ensure logout processing is complete
     return () => clearTimeout(timer);
   }, []);
 
@@ -95,6 +98,10 @@ export function Auth0Provider({ children }: { children: React.ReactNode }) {
     // Clear localStorage and sessionStorage
     localStorage.clear();
     sessionStorage.clear();
+    
+    // Clear any cached session data
+    localStorage.removeItem('auth0_user');
+    sessionStorage.removeItem('auth0_user');
     
     // Call the API route that handles both server-side cookie clearing and Auth0 logout
     window.location.href = '/api/logout';

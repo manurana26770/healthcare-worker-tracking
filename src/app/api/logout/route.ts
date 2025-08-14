@@ -36,20 +36,19 @@ export async function GET(request: NextRequest) {
     console.log('Server-side session cookie cleared');
     
     // Step 2: Redirect to Auth0's logout endpoint to clear Auth0's session
-    const auth0Domain = process.env.AUTH0_DOMAIN;
+    const issuerUrl = process.env.AUTH0_ISSUER_BASE_URL;
     const clientId = process.env.AUTH0_CLIENT_ID;
     const returnTo = encodeURIComponent(redirectUrl.toString());
     
-    console.log('Auth0 config:', { auth0Domain, clientId, returnTo });
+    console.log('Auth0 config:', { issuerUrl, clientId, returnTo });
     
-    if (!auth0Domain || !clientId) {
+    if (!issuerUrl || !clientId) {
       console.log('Auth0 environment variables not set, redirecting directly to home');
       return response; // Return the response with cleared cookies
     }
     
-    // Check if auth0Domain already includes protocol
-    const domain = auth0Domain.startsWith('http') ? auth0Domain : `https://${auth0Domain}`;
-    const auth0LogoutUrl = `${domain}/v2/logout?client_id=${clientId}&returnTo=${returnTo}`;
+    // Use the issuer URL directly (it should already include the protocol)
+    const auth0LogoutUrl = `${issuerUrl}/v2/logout?client_id=${clientId}&returnTo=${returnTo}`;
     
     console.log('Redirecting to Auth0 logout:', auth0LogoutUrl);
     return NextResponse.redirect(auth0LogoutUrl);
