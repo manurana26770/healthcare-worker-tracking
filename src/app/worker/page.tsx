@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth0 } from '@/context/Auth0Context';
 import {
   Box,
   Heading,
@@ -10,14 +11,12 @@ import {
   Card,
   CardHeader,
   CardBody,
-  Form,
   FormField,
   TextInput,
   Notification,
   Main,
   Header,
   Footer,
-  Grid,
   Spinner,
   Clock
 } from 'grommet';
@@ -25,7 +24,6 @@ import {
   StatusGood,
   StatusCritical,
   User, 
-  CaretPrevious, 
   Checkmark, 
   Location, 
   Clock as ClockIcon,
@@ -67,6 +65,7 @@ interface CurrentShift {
 
 export default function WorkerPage() {
   const router = useRouter();
+  const { logout } = useAuth0();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentShift, setCurrentShift] = useState<CurrentShift | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -112,15 +111,13 @@ export default function WorkerPage() {
       if (data.user) {
         // Redirect managers to manager page immediately
         if (data.user.role === 'MANAGER') {
-          console.log('Manager detected, redirecting to manager page');
           router.push('/manager');
           return;
         }
         
         // Only care workers can access worker dashboard
         if (data.user.role !== 'CARE_WORKER') {
-          console.log('User role not allowed:', data.user.role);
-          router.push('/');
+          window.location.href = '/';
           return;
         }
         
@@ -128,12 +125,12 @@ export default function WorkerPage() {
         setCurrentUser(data.user);
       } else {
         // No session, redirect to homepage
-        router.push('/');
+        window.location.href = '/';
         return;
       }
     } catch (error) {
       console.error('Error checking session:', error);
-      router.push('/');
+      window.location.href = '/';
     } finally {
       setIsLoadingUser(false);
     }
@@ -143,11 +140,10 @@ export default function WorkerPage() {
     if (!currentUser || currentUser.role !== 'CARE_WORKER') return;
     
     try {
-      const response = await fetch('/api/shifts/current');
+      const response = await fetch(`/api/shifts/current?userId=${currentUser.id}`);
       if (response.ok) {
         const data = await response.json();
-        setCurrentShift(data.shift);
-        console.log('Current shift data:', data.shift);
+        setCurrentShift(data.currentShift);
       } else {
         console.error('Failed to fetch current shift:', response.status, response.statusText);
         setCurrentShift(null);
@@ -259,6 +255,7 @@ export default function WorkerPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          userId: currentUser.id,  // ADDED: Include the user ID
           note: clockInNote,
           latitude: location.latitude,
           longitude: location.longitude
@@ -268,7 +265,7 @@ export default function WorkerPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to clock in');
+        throw new Error(data.error || data.message || 'Failed to clock in');
       }
 
       setSuccess('Successfully clocked in!');
@@ -296,6 +293,7 @@ export default function WorkerPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          userId: currentUser.id,  // ADDED: Include the user ID
           note: clockOutNote
         }),
       });
@@ -303,7 +301,7 @@ export default function WorkerPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to clock out');
+        throw new Error(data.error || data.message || 'Failed to clock out');
       }
 
       setSuccess('Successfully clocked out!');
@@ -318,13 +316,9 @@ export default function WorkerPage() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout');
-      router.push('/');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+  const handleLogout = () => {
+    // Use the Auth0Context logout function
+    logout();
   };
 
   const getCurrentTimeEntry = () => {
@@ -366,11 +360,6 @@ export default function WorkerPage() {
           Worker Dashboard
         </Heading>
         <Box direction="row" gap="small">
-          <Button 
-            icon={<CaretPrevious />} 
-            label="Back to Home" 
-            onClick={() => router.push('/')}
-          />
           <Button 
             label="Logout" 
             onClick={handleLogout}
@@ -651,4 +640,4 @@ export default function WorkerPage() {
       </Footer>
     </Box>
   );
-} 
+}

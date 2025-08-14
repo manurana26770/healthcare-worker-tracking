@@ -1,66 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
-import * as jose from 'jose';
-import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
-
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
-
-    // Find user in database
-    const user = await prisma.user.findFirst({
-      where: { email },
-      include: { location: true }
-    });
-
-    if (!user || !user.password) {
-      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
-    }
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, user.password);
+    console.log('=== AUTH0 LOGIN DEBUG ===');
     
-    if (!isValidPassword) {
-      return NextResponse.json({ message: 'Invalid credentials' }, { status: 401 });
+    const issuerUrl = process.env.AUTH0_ISSUER_BASE_URL;
+    const clientId = process.env.AUTH0_CLIENT_ID;
+    const baseUrl = process.env.AUTH0_BASE_URL || 'http://localhost:3000';
+    const redirectUri = 'http://localhost:3000/api/auth/callback';
+    
+    console.log('Environment Variables:', {
+      issuerUrl,
+      clientId: clientId ? 'SET' : 'MISSING',
+      baseUrl,
+      redirectUri
+    });
+    
+    if (!issuerUrl || !clientId) {
+      console.error('Missing required environment variables');
+      return NextResponse.json({ error: 'Auth0 configuration missing' }, { status: 500 });
     }
-
-    // Generate JWT token
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const token = await new jose.SignJWT({
-      userId: user.id,
-      role: user.role,
-      locationId: user.locationId
-    })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setExpirationTime('24h')
-    .sign(secret);
-
-    // Set cookie
-    const response = NextResponse.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        locationId: user.locationId,
-        location: user.location
-      }
-    });
-
-    response.cookies.set('auth_token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60, // 24 hours
-      path: '/'
-    });
-
-    return response;
-
+    
+    // Generate state parameter for security
+    const state = Math.random().toString(36).substring(2, 15);
+    
+    // Build Auth0 authorization URL
+    const authUrl = new URL('/authorize', issuerUrl);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('scope', 'openid profile email');
+    authUrl.searchParams.set('state', state);
+    
+    console.log('Final Auth URL:', authUrl.toString());
+    
+    // Redirect to Auth0
+    return NextResponse.redirect(authUrl.toString());
+    
   } catch (error) {
     console.error('Login error:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ error: 'Login failed' }, { status: 500 });
   }
-} 
+}

@@ -1,198 +1,110 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import * as jose from 'jose';
 
 const prisma = new PrismaClient();
 
-// Helper function to get user from token
-async function getUserFromToken(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get('auth_token')?.value;
+    console.log('=== FETCHING STAFF MEMBERS ===');
     
-    if (!token) {
-      return null;
-    }
-
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key');
-    const { payload } = await jose.jwtVerify(token, secret);
-    const decoded = payload as any;
+    // Get the user's location from the session
+    const sessionCookie = request.cookies.get('auth0_session');
+    let userLocationId: string | null = null;
     
-    if (!decoded || !decoded.userId) {
-      return null;
+    if (sessionCookie?.value) {
+      try {
+        const session = JSON.parse(sessionCookie.value);
+        if (session.user?.locationId) {
+          userLocationId = session.user.locationId;
+        }
+      } catch (error) {
+        console.error('Error parsing session:', error);
+      }
     }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        locationId: true
+    
+    // Build the where clause based on user role and location
+    const whereClause: any = {
+      role: 'CARE_WORKER' // Only show care workers, not managers
+    };
+    
+    // If user has a location assigned, filter by that location
+    if (userLocationId) {
+      whereClause.locationId = userLocationId;
+    }
+    
+    // Get all users with their location info and detailed time entries
+    const users = await prisma.user.findMany({
+      where: whereClause,
+      include: {
+        location: true,
+        shifts: {
+          where: {
+            endTime: null // Only active shifts
+          },
+          orderBy: {
+            startTime: 'desc'
+          },
+          take: 1,
+          include: {
+            timeEntries: {
+              orderBy: {
+                clockInTime: 'desc'
+              },
+              take: 10 // Get last 10 time entries for detailed view
+            }
+          }
+        }
+      },
+      orderBy: {
+        name: 'asc'
       }
     });
 
-    return user;
-  } catch (error) {
-    console.error('Error getting user from token:', error);
-    return null;
-  }
-}
-
-// GET staff members for a location
-export const GET = async (request: NextRequest) => {
-  try {
-    const user = await getUserFromToken(request);
-    
-    if (!user) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    // Only managers and admins can view staff
-    if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { message: 'Access denied' },
-        { status: 403 }
-      );
-    }
-
-    let staffMembers;
-    
-    if (user.role === 'ADMIN') {
-      // Admin can see all staff members
-      staffMembers = await prisma.user.findMany({
-        where: {
-          role: 'CARE_WORKER',
-          locationId: {
-            not: null
-          }
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          locationId: true,
-          location: {
-            select: {
-              id: true,
-              name: true,
-              address: true
-            }
-          },
-          shifts: {
-            where: {
-              timeEntries: {
-                some: {
-                  clockOutTime: null
-                }
-              }
-            },
-            select: {
-              id: true,
-              timeEntries: {
-                where: {
-                  clockOutTime: null
-                },
-                select: {
-                  id: true,
-                  clockInTime: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: {
-          name: 'asc'
-        }
-      });
-    } else {
-      // Managers can only see staff from their assigned location
-      if (!user.locationId) {
-        return NextResponse.json({
-          staffMembers: [],
-          message: 'No location assigned to user'
-        });
-      }
+    // Transform users to staff members with detailed clock status and time entries
+    const staffMembers = users.map(user => {
+      const activeShift = user.shifts[0];
+      const isClockedIn = activeShift && activeShift.timeEntries.length > 0 && 
+                         !activeShift.timeEntries[0].clockOutTime;
+      const currentTimeEntry = isClockedIn ? activeShift.timeEntries[0] : null;
       
-      staffMembers = await prisma.user.findMany({
-        where: {
-          role: 'CARE_WORKER',
-          locationId: user.locationId
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          locationId: true,
-          location: {
-            select: {
-              id: true,
-              name: true,
-              address: true
-            }
-          },
-          shifts: {
-            where: {
-              timeEntries: {
-                some: {
-                  clockOutTime: null
-                }
-              }
-            },
-            select: {
-              id: true,
-              timeEntries: {
-                where: {
-                  clockOutTime: null
-                },
-                select: {
-                  id: true,
-                  clockInTime: true
-                }
-              }
-            }
-          }
-        },
-        orderBy: {
-          name: 'asc'
-        }
-      });
-    }
-
-    // Transform the data to include clock-in status
-    const transformedStaff = staffMembers.map(staff => {
-      const isClockedIn = staff.shifts.length > 0;
-      const currentShift = staff.shifts[0];
-      const lastClockIn = currentShift?.timeEntries[0]?.clockInTime;
-
+      // Get detailed time entries for the last 7 days
+      const recentTimeEntries = activeShift?.timeEntries.slice(0, 10) || [];
+      
       return {
-        id: staff.id,
-        name: staff.name,
-        email: staff.email,
-        role: staff.role,
-        locationId: staff.locationId,
-        location: staff.location,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        location: user.location,
         isClockedIn,
-        lastClockIn: lastClockIn ? lastClockIn.toISOString() : null,
-        currentShiftId: currentShift?.id || null
+        lastClockIn: currentTimeEntry?.clockInTime || null,
+        currentShiftId: activeShift?.id || null,
+        recentTimeEntries: recentTimeEntries.map(entry => ({
+          id: entry.id,
+          clockInTime: entry.clockInTime,
+          clockOutTime: entry.clockOutTime,
+          clockInLatitude: entry.clockInLatitude,
+          clockInLongitude: entry.clockInLongitude,
+          clockOutLatitude: entry.clockOutLatitude,
+          clockOutLongitude: entry.clockOutLongitude,
+          note: entry.note,
+          duration: entry.clockOutTime ? 
+            (entry.clockOutTime.getTime() - entry.clockInTime.getTime()) / (1000 * 60 * 60) : null
+        }))
       };
     });
 
+    console.log('Found staff members:', staffMembers.length);
+
     return NextResponse.json({
-      staffMembers: transformedStaff,
-      message: 'Staff members retrieved successfully'
+      staffMembers: staffMembers
     });
 
   } catch (error) {
-    console.error('Error fetching staff members:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Failed to fetch staff members:', error);
+    return NextResponse.json({ 
+      error: 'Failed to fetch staff members',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
-};
+}

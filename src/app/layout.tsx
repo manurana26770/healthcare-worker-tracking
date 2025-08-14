@@ -4,6 +4,7 @@ import "./globals.css";
 import { ApolloProvider } from "@/components/providers/ApolloProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { AppProvider } from "@/context/AppContext";
+import { Auth0Provider } from "@/context/Auth0Context";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,13 +31,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <AppProvider>
-          <ApolloProvider>
-            <ThemeProvider>
-              {children}
-            </ThemeProvider>
-          </ApolloProvider>
-        </AppProvider>
+        <Auth0Provider>
+          <AppProvider>
+            <ApolloProvider>
+              <ThemeProvider>
+                {children}
+              </ThemeProvider>
+            </ApolloProvider>
+          </AppProvider>
+        </Auth0Provider>
       </body>
     </html>
   );

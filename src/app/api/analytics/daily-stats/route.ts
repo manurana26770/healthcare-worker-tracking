@@ -1,171 +1,173 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import * as jose from 'jose';
 
 const prisma = new PrismaClient();
 
-async function getUserFromToken(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const token = request.cookies.get('auth_token')?.value;
-    if (!token) return null;
-
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const { payload } = await jose.jwtVerify(token, secret);
+    console.log('=== FETCHING ANALYTICS DATA ===');
     
-    return payload as { userId: string; role: string; locationId?: string };
-  } catch (error) {
-    return null;
-  }
-}
-
-export const GET = async (request: NextRequest) => {
-  try {
-    const user = await getUserFromToken(request);
-    if (!user) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    // Get the user's location from the session
+    const sessionCookie = request.cookies.get('auth0_session');
+    let userLocationId: string | null = null;
     
-    if (user.role !== 'MANAGER' && user.role !== 'ADMIN') {
-      return NextResponse.json({ message: 'Access denied' }, { status: 403 });
-    }
-
-    // Get date range (last 7 days)
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 7);
-
-    // Build where clause based on user role
-    const whereClause: any = {
-      startTime: {
-        gte: startDate,
-        lte: endDate
+    if (sessionCookie?.value) {
+      try {
+        const session = JSON.parse(sessionCookie.value);
+        if (session.user?.locationId) {
+          userLocationId = session.user.locationId;
+        }
+      } catch (error) {
+        console.error('Error parsing session:', error);
       }
-    };
-
-    // If manager, only show data for their location
-    if (user.role === 'MANAGER' && user.locationId) {
-      whereClause.locationId = user.locationId;
     }
-
-    // Get all shifts in the date range
-    const shifts = await prisma.shift.findMany({
-      where: whereClause,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true
-          }
+    
+    const today = new Date();
+    const startOfWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const endOfWeek = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+    
+    // Build location filter
+    const locationFilter = userLocationId ? { locationId: userLocationId } : {};
+    
+    // Get time entries for the last 7 days
+    const timeEntries = await prisma.timeEntry.findMany({
+      where: {
+        clockInTime: {
+          gte: startOfWeek,
+          lt: endOfWeek
         },
-        timeEntries: {
-          where: {
-            clockOutTime: {
-              not: null
+        shift: {
+          ...locationFilter,
+          user: {
+            role: 'CARE_WORKER' // Only include care workers in analytics
+          }
+        }
+      },
+      include: {
+        shift: {
+          include: {
+            user: {
+              include: {
+                location: true
+              }
             }
           }
         }
       },
       orderBy: {
-        startTime: 'desc'
+        clockInTime: 'desc'
       }
     });
-
+    
+    // Group entries by date
+    const entriesByDate = new Map<string, typeof timeEntries>();
+    const staffHoursByDate = new Map<string, Map<string, number>>();
+    
+    timeEntries.forEach(entry => {
+      const dateKey = entry.clockInTime.toISOString().split('T')[0];
+      
+      if (!entriesByDate.has(dateKey)) {
+        entriesByDate.set(dateKey, []);
+        staffHoursByDate.set(dateKey, new Map());
+      }
+      
+      entriesByDate.get(dateKey)!.push(entry);
+      
+      // Calculate hours for this entry
+      if (entry.clockOutTime) {
+        const hours = (entry.clockOutTime.getTime() - entry.clockInTime.getTime()) / (1000 * 60 * 60);
+        const staffId = entry.shift.userId;
+        const currentHours = staffHoursByDate.get(dateKey)!.get(staffId) || 0;
+        staffHoursByDate.get(dateKey)!.set(staffId, currentHours + hours);
+      }
+    });
+    
     // Calculate daily statistics
-    const dailyStats: { [date: string]: any } = {};
-    const staffHours: { [staffId: string]: number } = {};
-
-    shifts.forEach(shift => {
-      const dateKey = shift.startTime.toISOString().split('T')[0];
-      
-      if (!dailyStats[dateKey]) {
-        dailyStats[dateKey] = {
-          date: dateKey,
-          totalHours: 0,
-          totalShifts: 0,
-          uniqueStaff: new Set(),
-          staffHours: {}
-        };
-      }
-
-      // Calculate total hours for this shift
-      let shiftHours = 0;
-      shift.timeEntries.forEach(entry => {
+    const dailyStats = Array.from(entriesByDate.entries()).map(([date, entries]) => {
+      const uniqueStaff = new Set(entries.map(e => e.shift.userId));
+      const totalHours = entries.reduce((total, entry) => {
         if (entry.clockOutTime) {
-          const duration = new Date(entry.clockOutTime).getTime() - new Date(entry.clockInTime).getTime();
-          shiftHours += duration / (1000 * 60 * 60); // Convert to hours
+          return total + (entry.clockOutTime.getTime() - entry.clockInTime.getTime()) / (1000 * 60 * 60);
         }
-      });
-
-      dailyStats[dateKey].totalHours += shiftHours;
-      dailyStats[dateKey].totalShifts += 1;
-      dailyStats[dateKey].uniqueStaff.add(shift.userId);
+        return total;
+      }, 0);
       
-      // Track staff hours
-      if (!staffHours[shift.userId]) {
-        staffHours[shift.userId] = 0;
-      }
-      staffHours[shift.userId] += shiftHours;
-
-      if (!dailyStats[dateKey].staffHours[shift.userId]) {
-        dailyStats[dateKey].staffHours[shift.userId] = 0;
-      }
-      dailyStats[dateKey].staffHours[shift.userId] += shiftHours;
-    });
-
-    // Convert to array and calculate averages
-    const dailyStatsArray = Object.values(dailyStats).map((day: any) => ({
-      date: day.date,
-      totalHours: Math.round(day.totalHours * 100) / 100,
-      totalShifts: day.totalShifts,
-      uniqueStaffCount: day.uniqueStaff.size,
-      avgHoursPerShift: day.totalShifts > 0 ? Math.round((day.totalHours / day.totalShifts) * 100) / 100 : 0,
-      avgHoursPerStaff: day.uniqueStaff.size > 0 ? Math.round((day.totalHours / day.uniqueStaff.size) * 100) / 100 : 0
-    }));
-
-    // Get staff details for the hours breakdown
-    const staffDetails = await prisma.user.findMany({
-      where: {
-        id: {
-          in: Object.keys(staffHours)
+      const avgHoursPerStaff = uniqueStaff.size > 0 ? totalHours / uniqueStaff.size : 0;
+      
+      return {
+        date,
+        totalHours: Math.round(totalHours * 100) / 100,
+        totalShifts: entries.length,
+        uniqueStaffCount: uniqueStaff.size,
+        avgHoursPerShift: entries.length > 0 ? totalHours / entries.length : 0,
+        avgHoursPerStaff: Math.round(avgHoursPerStaff * 100) / 100
+      };
+    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    // Calculate staff hours breakdown for the last week
+    const staffHoursMap = new Map<string, { id: string; name: string; email: string; totalHours: number }>();
+    
+    timeEntries.forEach(entry => {
+      if (entry.clockOutTime) {
+        const hours = (entry.clockOutTime.getTime() - entry.clockInTime.getTime()) / (1000 * 60 * 60);
+        const staffId = entry.shift.userId;
+        const staffName = entry.shift.user.name;
+        const staffEmail = entry.shift.user.email;
+        
+        if (staffHoursMap.has(staffId)) {
+          staffHoursMap.get(staffId)!.totalHours += hours;
+        } else {
+          staffHoursMap.set(staffId, {
+            id: staffId,
+            name: staffName,
+            email: staffEmail,
+            totalHours: hours
+          });
         }
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true
       }
     });
-
-    const staffHoursBreakdown = staffDetails.map(staff => ({
-      id: staff.id,
-      name: staff.name,
-      email: staff.email,
-      totalHours: Math.round(staffHours[staff.id] * 100) / 100
-    }));
-
-    // Calculate overall averages
-    const totalDays = dailyStatsArray.length;
-    const totalHours = dailyStatsArray.reduce((sum, day) => sum + day.totalHours, 0);
-    const totalShifts = dailyStatsArray.reduce((sum, day) => sum + day.totalShifts, 0);
-    const totalUniqueStaff = dailyStatsArray.reduce((sum, day) => sum + day.uniqueStaffCount, 0);
-
+    
+    const staffHoursBreakdown = Array.from(staffHoursMap.values())
+      .map(staff => ({
+        ...staff,
+        totalHours: Math.round(staff.totalHours * 100) / 100
+      }))
+      .sort((a, b) => b.totalHours - a.totalHours);
+    
+    // Calculate overall statistics
+    const totalHoursLastWeek = dailyStats.reduce((total, day) => total + day.totalHours, 0);
+    const totalShiftsLastWeek = dailyStats.reduce((total, day) => total + day.totalShifts, 0);
+    const totalUniqueStaffLastWeek = new Set(timeEntries.map(e => e.shift.userId)).size;
+    
+    const avgHoursPerDay = dailyStats.length > 0 ? totalHoursLastWeek / dailyStats.length : 0;
+    const avgPeoplePerDay = dailyStats.length > 0 ? 
+      dailyStats.reduce((total, day) => total + day.uniqueStaffCount, 0) / dailyStats.length : 0;
+    
     const overallStats = {
-      avgHoursPerDay: totalDays > 0 ? Math.round((totalHours / totalDays) * 100) / 100 : 0,
-      avgPeoplePerDay: totalDays > 0 ? Math.round((totalUniqueStaff / totalDays) * 100) / 100 : 0,
-      totalHoursLastWeek: Math.round(totalHours * 100) / 100,
-      totalShiftsLastWeek: totalShifts,
-      totalUniqueStaffLastWeek: totalUniqueStaff
+      avgHoursPerDay: Math.round(avgHoursPerDay * 100) / 100,
+      avgPeoplePerDay: Math.round(avgPeoplePerDay * 100) / 100,
+      totalHoursLastWeek: Math.round(totalHoursLastWeek * 100) / 100,
+      totalShiftsLastWeek,
+      totalUniqueStaffLastWeek
     };
+    
+    console.log('Analytics calculated:', {
+      dailyStats: dailyStats.length,
+      staffHoursBreakdown: staffHoursBreakdown.length,
+      overallStats
+    });
 
     return NextResponse.json({
-      dailyStats: dailyStatsArray,
+      dailyStats,
       staffHoursBreakdown,
       overallStats
     });
 
   } catch (error) {
-    console.error('Error fetching analytics:', error);
-    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
+    console.error('Failed to fetch analytics:', error);
+    return NextResponse.json({ 
+      error: 'Failed to fetch analytics',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
-};
+}

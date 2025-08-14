@@ -31,7 +31,7 @@ A comprehensive web application for healthcare organizations to manage employee 
 - **UI Framework**: Grommet Design System
 - **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: Auth0
-- **API**: GraphQL with Apollo Server
+- **API**: REST API with Next.js API Routes
 - **Styling**: Tailwind CSS
 - **Location Services**: Browser Geolocation API
 
@@ -39,10 +39,10 @@ A comprehensive web application for healthcare organizations to manage employee 
 
 ### Core Models
 - **User**: Base user with authentication and role management
-- **CareWorker**: Healthcare worker profiles with employee details
-- **Manager**: Manager profiles with location management permissions
 - **Location**: Facility locations with GPS coordinates and perimeter radius
+- **Shift**: Work shifts with start and end times
 - **TimeEntry**: Clock-in/out records with location and timestamp data
+- **Note**: Additional notes for clock-in/out events
 
 ### User Roles
 - **ADMIN**: Full system access
@@ -72,12 +72,12 @@ A comprehensive web application for healthcare organizations to manage employee 
 3. **Environment Setup**
    Create a `.env.local` file with the following variables:
    ```env
-   DATABASE_URL="postgresql://username:password@localhost:5432/healthcare_tracking"
-   AUTH0_SECRET="your-auth0-secret"
-   AUTH0_ISSUER_BASE_URL="https://your-domain.auth0.com"
+   DATABASE_URL="postgresql://username:password@localhost:5432/healthcare_db"
+   AUTH0_ISSUER_BASE_URL="https://your-tenant.auth0.com"
    AUTH0_BASE_URL="http://localhost:3000"
    AUTH0_CLIENT_ID="your-auth0-client-id"
    AUTH0_CLIENT_SECRET="your-auth0-client-secret"
+   NODE_ENV="development"
    ```
 
 4. **Database Setup**

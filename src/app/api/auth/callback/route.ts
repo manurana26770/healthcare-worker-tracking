@@ -1,30 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET(request: NextRequest) {
   try {
+    console.log('=== AUTH0 CALLBACK DEBUG ===');
+    console.log('Request URL:', request.url);
+    
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
     const error = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+    
+    console.log('Callback parameters:', {
+      code: code ? 'PRESENT' : 'MISSING',
+      error,
+      errorDescription,
+    });
     
     if (error) {
-      return NextResponse.redirect(`${request.nextUrl.origin}?error=${error}`);
+      console.error('Auth0 error:', error, errorDescription);
+      return NextResponse.redirect(`http://localhost:3000?error=${error}&description=${errorDescription || ''}`);
     }
     
     if (!code) {
-      return NextResponse.redirect(`${request.nextUrl.origin}?error=no_code`);
+      console.error('No authorization code received');
+      return NextResponse.redirect('http://localhost:3000?error=no_code');
     }
     
-    // Exchange code for tokens
-    const auth0Domain = process.env.AUTH0_DOMAIN;
+    console.log('Exchanging code for tokens...');
+    
+    const issuerUrl = process.env.AUTH0_ISSUER_BASE_URL;
     const clientId = process.env.AUTH0_CLIENT_ID;
     const clientSecret = process.env.AUTH0_CLIENT_SECRET;
-    const redirectUri = `${request.nextUrl.origin}/api/auth/callback`;
+    const redirectUri = 'http://localhost:3000/api/auth/callback';
     
-    const tokenResponse = await fetch(`https://${auth0Domain}/oauth/token`, {
+    // Exchange code for tokens
+    const tokenResponse = await fetch(`${issuerUrl}/oauth/token`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         grant_type: 'authorization_code',
         client_id: clientId,
@@ -36,32 +51,124 @@ export async function GET(request: NextRequest) {
     
     const tokens = await tokenResponse.json();
     
+    console.log('Token response status:', tokenResponse.status);
+    console.log('Token response:', tokens);
+    
     if (tokens.error) {
-      return NextResponse.redirect(`${request.nextUrl.origin}?error=token_exchange_failed`);
+      console.error('Token exchange failed:', tokens);
+      return NextResponse.redirect(`http://localhost:3000?error=token_exchange_failed&details=${tokens.error}`);
     }
     
-    // Get user info
-    const userResponse = await fetch(`https://${auth0Domain}/userinfo`, {
-      headers: {
-        Authorization: `Bearer ${tokens.access_token}`,
-      },
+    console.log('Getting user info...');
+    
+    // Get user info from Auth0
+    const userResponse = await fetch(`${issuerUrl}/userinfo`, {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     
-    const user = await userResponse.json();
+    const auth0User = await userResponse.json();
     
-    // Set session cookie (simplified - in production use proper session management)
-    const response = NextResponse.redirect(request.nextUrl.origin);
-    response.cookies.set('auth0_session', JSON.stringify({ user, tokens }), {
+    console.log('Auth0 user info:', auth0User);
+    
+    // Check if user exists in database
+    let dbUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { auth0Id: auth0User.sub },
+          { email: auth0User.email }
+        ]
+      },
+      include: {
+        location: true
+      }
+    });
+    
+    let isNewUser = false;
+    
+    if (!dbUser) {
+      console.log('Creating new user in database...');
+      
+      // Create new user without role and location (will be set during onboarding)
+      dbUser = await prisma.user.create({
+        data: {
+          auth0Id: auth0User.sub,
+          email: auth0User.email,
+          name: auth0User.name || auth0User.email,
+          // role and locationId will be null initially
+        },
+        include: {
+          location: true
+        }
+      });
+      
+      console.log('New user created:', dbUser);
+      isNewUser = true;
+    } else {
+      console.log('Existing user found:', dbUser);
+      
+      // Update auth0Id if not set
+      if (!dbUser.auth0Id) {
+        dbUser = await prisma.user.update({
+          where: { id: dbUser.id },
+          data: { auth0Id: auth0User.sub },
+          include: {
+            location: true
+          }
+        });
+      }
+    }
+    
+    // Create enhanced user object with database info
+    const enhancedUser = {
+      ...auth0User,
+      id: dbUser.id,
+      role: dbUser.role,
+      locationId: dbUser.locationId,
+      location: dbUser.location,
+      auth0Id: dbUser.auth0Id
+    };
+    
+    console.log('Enhanced user object:', enhancedUser);
+    
+    // Determine redirect URL based on user status
+    let redirectUrl = 'http://localhost:3000';
+    
+    if (isNewUser || !dbUser.role || !dbUser.locationId) {
+      // New user or incomplete profile - redirect to onboarding
+      redirectUrl = 'http://localhost:3000/onboarding';
+      console.log('Redirecting to onboarding');
+    } else {
+      // Existing user with complete profile - redirect based on role
+      switch (dbUser.role) {
+        case 'CARE_WORKER':
+          redirectUrl = 'http://localhost:3000/worker';
+          break;
+        case 'MANAGER':
+        case 'ADMIN':
+          redirectUrl = 'http://localhost:3000/manager';
+          break;
+        default:
+          redirectUrl = 'http://localhost:3000/onboarding';
+      }
+      console.log('Redirecting to dashboard:', redirectUrl);
+    }
+    
+    // Set session cookie
+    const response = NextResponse.redirect(redirectUrl);
+    response.cookies.set('auth0_session', JSON.stringify({ 
+      user: enhancedUser, 
+      tokens 
+    }), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7, // 7 days
     });
     
+    console.log('=== AUTH0 CALLBACK SUCCESS ===');
     return response;
-    
   } catch (error) {
     console.error('Callback error:', error);
-    return NextResponse.redirect(`${request.nextUrl.origin}?error=callback_failed`);
+    return NextResponse.redirect('http://localhost:3000?error=callback_failed');
   }
 } 

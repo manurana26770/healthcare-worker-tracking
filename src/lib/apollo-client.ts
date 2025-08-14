@@ -28,4 +28,4 @@ export const client = new ApolloClient({
       errorPolicy: 'all',
     },
   },
-}); 
+});

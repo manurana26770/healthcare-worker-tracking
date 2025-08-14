@@ -1,6 +1,6 @@
 'use client';
 
-import { ApolloProvider as Provider } from '@apollo/client';
+import { ApolloProvider as ApolloClientProvider } from '@apollo/client';
 import { client } from '@/lib/apollo-client';
 
 interface ApolloProviderProps {
@@ -9,8 +9,8 @@ interface ApolloProviderProps {
 
 export function ApolloProvider({ children }: ApolloProviderProps) {
   return (
-    <Provider client={client}>
+    <ApolloClientProvider client={client}>
       {children}
-    </Provider>
+    </ApolloClientProvider>
   );
-} 
+}

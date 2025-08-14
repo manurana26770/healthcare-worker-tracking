@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth0 } from '@/context/Auth0Context';
 import {
   Box,
   Heading,
@@ -20,9 +21,11 @@ import {
   Tab,
   Spinner,
   Stack,
-  Meter
+  Meter,
+  Accordion,
+  AccordionPanel
 } from 'grommet';
-import { Add, Edit, Trash, Location, User, Clock, Analytics, Refresh } from 'grommet-icons';
+import { Add, Edit, Trash, Location, User, Clock, Analytics, Refresh, MapPin, Calendar } from 'grommet-icons';
 
 interface User {
   id: string;
@@ -70,6 +73,31 @@ interface StaffMember {
   isClockedIn: boolean;
   lastClockIn?: string;
   currentShiftId?: string;
+  recentTimeEntries?: TimeEntry[];
+}
+
+interface TimeEntry {
+  id: string;
+  clockInTime: string;
+  clockOutTime?: string;
+  clockInLatitude: number;
+  clockInLongitude: number;
+  clockOutLatitude?: number;
+  clockOutLongitude?: number;
+  note?: string;
+  duration?: number;
+  isActive?: boolean;
+}
+
+interface StaffTimeEntry {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  location: any;
+  timeEntries: TimeEntry[];
+  totalHours: number;
+  isCurrentlyClockedIn: boolean;
 }
 
 interface DailyStats {
@@ -98,15 +126,18 @@ interface OverallStats {
 
 export default function ManagerPage() {
   const router = useRouter();
+  const { logout } = useAuth0();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
+  const [staffTimeEntries, setStaffTimeEntries] = useState<StaffTimeEntry[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
   const [staffHoursBreakdown, setStaffHoursBreakdown] = useState<StaffHoursBreakdown[]>([]);
   const [overallStats, setOverallStats] = useState<OverallStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
+  const [isLoadingTimeEntries, setIsLoadingTimeEntries] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +162,7 @@ export default function ManagerPage() {
       fetchLocations();
       fetchStaffMembers();
       fetchAnalytics();
+      fetchStaffTimeEntries();
     }
   }, [currentUser]);
 
@@ -144,17 +176,17 @@ export default function ManagerPage() {
         
         // Redirect if not a manager or admin
         if (data.user.role !== 'MANAGER' && data.user.role !== 'ADMIN') {
-          router.push('/');
+          window.location.href = '/';
           return;
         }
       } else {
         // No session, redirect to homepage
-        router.push('/');
+        window.location.href = '/';
         return;
       }
     } catch (error) {
       console.error('Error checking session:', error);
-      router.push('/');
+      window.location.href = '/';
     } finally {
       setIsLoadingUser(false);
     }
@@ -191,6 +223,25 @@ export default function ManagerPage() {
       }
     } catch (error) {
       console.error('Error fetching staff members:', error);
+    }
+  };
+
+  const fetchStaffTimeEntries = async () => {
+    if (!currentUser) return;
+    
+    try {
+      setIsLoadingTimeEntries(true);
+      const response = await fetch('/api/staff/time-entries');
+      if (response.ok) {
+        const data = await response.json();
+        setStaffTimeEntries(data.staffTimeEntries || []);
+      } else {
+        console.error('Failed to fetch staff time entries');
+      }
+    } catch (error) {
+      console.error('Error fetching staff time entries:', error);
+    } finally {
+      setIsLoadingTimeEntries(false);
     }
   };
 
@@ -309,13 +360,9 @@ export default function ManagerPage() {
     setError(null);
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout');
-      router.push('/');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+  const handleLogout = () => {
+    // Use the Auth0Context logout function
+    logout();
   };
 
   const formatDate = (dateString: string) => {
@@ -325,6 +372,20 @@ export default function ManagerPage() {
       month: 'short', 
       day: 'numeric' 
     });
+  };
+
+  const formatDateTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatCoordinates = (lat: number, lng: number) => {
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   };
 
   const locationColumns = [
@@ -421,12 +482,56 @@ export default function ManagerPage() {
     {
       property: 'lastClockIn',
       header: 'Last Clock In',
-      render: (datum: StaffMember) => datum.lastClockIn ? new Date(datum.lastClockIn).toLocaleString() : 'N/A',
+      render: (datum: StaffMember) => datum.lastClockIn ? formatDateTime(datum.lastClockIn) : 'N/A',
     },
     {
       property: 'location',
       header: 'Location',
       render: (datum: StaffMember) => datum.location ? datum.location.name : 'N/A',
+    },
+  ];
+
+  const timeEntryColumns = [
+    {
+      property: 'clockInTime',
+      header: 'Clock In',
+      render: (datum: TimeEntry) => formatDateTime(datum.clockInTime),
+    },
+    {
+      property: 'clockOutTime',
+      header: 'Clock Out',
+      render: (datum: TimeEntry) => datum.clockOutTime ? formatDateTime(datum.clockOutTime) : 'Active',
+    },
+    {
+      property: 'duration',
+      header: 'Duration',
+      render: (datum: TimeEntry) => datum.duration ? `${datum.duration.toFixed(2)}h` : 'N/A',
+    },
+    {
+      property: 'clockInLocation',
+      header: 'Clock In Location',
+      render: (datum: TimeEntry) => formatCoordinates(datum.clockInLatitude, datum.clockInLongitude),
+    },
+    {
+      property: 'clockOutLocation',
+      header: 'Clock Out Location',
+      render: (datum: TimeEntry) => datum.clockOutLatitude && datum.clockOutLongitude ? 
+        formatCoordinates(datum.clockOutLatitude, datum.clockOutLongitude) : 'N/A',
+    },
+    {
+      property: 'status',
+      header: 'Status',
+      render: (datum: TimeEntry) => (
+        <Box
+          background={datum.isActive ? 'status-ok' : 'status-unknown'}
+          pad="xsmall"
+          round="small"
+        >
+          <Text size="small" color="white">
+            {datum.isActive ? 'Active' : 'Completed'}
+          </Text>
+        </Box>
+      ),
     },
   ];
 
@@ -514,10 +619,6 @@ export default function ManagerPage() {
           </Box>
           <Box direction="row" gap="small">
             <Button 
-              label="Back to Home" 
-              onClick={() => router.push('/')}
-            />
-            <Button 
               label="Logout" 
               onClick={handleLogout}
             />
@@ -551,14 +652,14 @@ export default function ManagerPage() {
             <Box gap="large" margin={{ top: 'medium' }}>
               <Box direction="row" justify="between" align="center">
                 <Heading level="3" margin="none">
-                  Staff Members
+                  Care Workers
                 </Heading>
                 <Text size="small" color="neutral-2">
-                  {staffMembers.length} total staff members
+                  {staffMembers.length} total care workers
                 </Text>
               </Box>
 
-              <Grid columns={['1fr', '1fr', '1fr']} gap="medium">
+              <Grid columns={['1fr', '1fr']} gap="medium">
                 <Card background="light-1" pad="medium">
                   <Box align="center">
                     <Text size="large" weight="bold">
@@ -572,15 +673,7 @@ export default function ManagerPage() {
                     <Text size="large" weight="bold">
                       {staffMembers.length}
                     </Text>
-                    <Text size="small">Total Staff</Text>
-                  </Box>
-                </Card>
-                <Card background="light-1" pad="medium">
-                  <Box align="center">
-                    <Text size="large" weight="bold">
-                      {staffMembers.filter(s => s.role === 'CARE_WORKER').length}
-                    </Text>
-                    <Text size="small">Care Workers</Text>
+                    <Text size="small">Total Care Workers</Text>
                   </Box>
                 </Card>
               </Grid>
@@ -596,11 +689,104 @@ export default function ManagerPage() {
             </Box>
           </Tab>
 
+          <Tab title="Time Tracking" icon={<Clock />}>
+            <Box gap="large" margin={{ top: 'medium' }}>
+              <Box direction="row" justify="between" align="center">
+                <Heading level="3" margin="none">
+                  Staff Time Tracking
+                </Heading>
+                <Button
+                  icon={<Refresh />}
+                  label="Refresh Data"
+                  onClick={fetchStaffTimeEntries}
+                  disabled={isLoadingTimeEntries}
+                />
+              </Box>
+              
+              <Text color="neutral-2">
+                Detailed view of staff clock in/out times and locations for the last 7 days.
+              </Text>
+
+              {isLoadingTimeEntries ? (
+                <Box align="center" gap="medium">
+                  <Spinner size="large" />
+                  <Text>Loading time entries...</Text>
+                </Box>
+              ) : staffTimeEntries.length > 0 ? (
+                <Accordion>
+                  {staffTimeEntries.map((staff) => (
+                    <AccordionPanel
+                      key={staff.id}
+                      label={
+                        <Box direction="row" justify="between" align="center" width="100%">
+                          <Box>
+                            <Text weight="bold">{staff.name}</Text>
+                            <Text size="small" color="neutral-2">{staff.email}</Text>
+                          </Box>
+                          <Box direction="row" gap="medium" align="center">
+                            <Box
+                              background={staff.isCurrentlyClockedIn ? 'status-ok' : 'status-error'}
+                              pad="xsmall"
+                              round="small"
+                            >
+                              <Text size="small" color="white">
+                                {staff.isCurrentlyClockedIn ? 'Clocked In' : 'Clocked Out'}
+                              </Text>
+                            </Box>
+                            <Text size="small" color="neutral-2">
+                              Total: {staff.totalHours}h
+                            </Text>
+                          </Box>
+                        </Box>
+                      }
+                    >
+                      <Box gap="medium" pad="medium">
+                        <Box direction="row" gap="medium" align="center">
+                          <Text size="small" color="neutral-2">
+                            Role: {staff.role}
+                          </Text>
+                          <Text size="small" color="neutral-2">
+                            Location: {staff.location?.name || 'N/A'}
+                          </Text>
+                        </Box>
+                        
+                        {staff.timeEntries.length > 0 ? (
+                          <DataTable
+                            columns={timeEntryColumns}
+                            data={staff.timeEntries}
+                            step={10}
+                            resizeable
+                          />
+                        ) : (
+                          <Box align="center" pad="medium">
+                            <Text color="neutral-2">No time entries found</Text>
+                          </Box>
+                        )}
+                      </Box>
+                    </AccordionPanel>
+                  ))}
+                </Accordion>
+              ) : (
+                <Card background="light-1" pad="large">
+                  <Box align="center" gap="medium">
+                    <Clock size="large" color="neutral-3" />
+                    <Text size="large" color="neutral-2">
+                      No Time Entries Available
+                    </Text>
+                    <Text size="small" color="neutral-3">
+                      Time entries will appear once staff members start clocking in and out.
+                    </Text>
+                  </Box>
+                </Card>
+              )}
+            </Box>
+          </Tab>
+
           <Tab title="Location Management" icon={<Location />}>
             <Box gap="large" margin={{ top: 'medium' }}>
               <Box direction="row" justify="between" align="center">
                 <Heading level="3" margin="none">
-                  Location Perimeters
+                  Assigned Location
                 </Heading>
                 {currentUser.role === 'ADMIN' && (
                   <Button
@@ -613,7 +799,7 @@ export default function ManagerPage() {
               </Box>
 
               <Text color="neutral-2">
-                Manage location perimeters where workers can clock in. Workers must be within the specified radius to clock in.
+                Your assigned location perimeter where care workers can clock in. Workers must be within the specified radius to clock in.
               </Text>
 
               {showForm && (
@@ -732,12 +918,12 @@ export default function ManagerPage() {
                   <Box align="center" gap="medium">
                     <Location size="large" color="neutral-3" />
                     <Text size="large" color="neutral-2">
-                      No locations configured yet
+                      No location assigned
                     </Text>
                     <Text size="small" color="neutral-3">
                       {currentUser.role === 'ADMIN' 
-                        ? 'Add your first location to enable worker clock-ins'
-                        : 'Contact your administrator to configure locations'
+                        ? 'You need to be assigned to a location to manage care workers'
+                        : 'Contact your administrator to assign you to a location'
                       }
                     </Text>
                     {currentUser.role === 'ADMIN' && (

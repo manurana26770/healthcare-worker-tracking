@@ -1,127 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import * as jose from 'jose';
 
 const prisma = new PrismaClient();
 
-// Helper function to get user from token
-async function getUserFromToken(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const token = request.cookies.get('auth_token')?.value;
+    const { userId, note } = await request.json();
     
-    if (!token) {
-      return null;
+    if (!userId) {
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
     }
-
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'your-secret-key');
-    const { payload } = await jose.jwtVerify(token, secret);
-    const decoded = payload as any;
     
-    if (!decoded || !decoded.userId) {
-      return null;
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        locationId: true
+    // Find active shift
+    const activeShift = await prisma.shift.findFirst({
+      where: {
+        userId: userId,
+        endTime: null
       }
     });
-
-    return user;
-  } catch (error) {
-    console.error('Error getting user from token:', error);
-    return null;
-  }
-}
-
-// POST clock out
-export const POST = async (request: NextRequest) => {
-  try {
-    const user = await getUserFromToken(request);
     
-    if (!user) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
+    if (!activeShift) {
+      return NextResponse.json({ error: 'No active shift found' }, { status: 400 });
     }
-
-    // Only care workers can clock out
-    if (user.role !== 'CARE_WORKER') {
-      return NextResponse.json(
-        { message: 'Only care workers can clock out' },
-        { status: 403 }
-      );
-    }
-
-    const { note } = await request.json();
-
-    // Find the active time entry for the user
-    const activeTimeEntry = await prisma.timeEntry.findFirst({
+    
+    // Find active time entry
+    const activeEntry = await prisma.timeEntry.findFirst({
       where: {
-        shift: {
-          userId: user.id
-        },
+        shiftId: activeShift.id,
         clockOutTime: null
-      },
-      include: {
-        shift: true
       }
     });
-
-    if (!activeTimeEntry) {
-      return NextResponse.json(
-        { message: 'You are not currently clocked in' },
-        { status: 400 }
-      );
+    
+    if (!activeEntry) {
+      return NextResponse.json({ error: 'No active time entry found' }, { status: 400 });
     }
-
-    // Update the time entry with clock out time and note
-    const updatedTimeEntry = await prisma.timeEntry.update({
+    
+    // Update time entry with clock out
+    const updatedEntry = await prisma.timeEntry.update({
       where: {
-        id: activeTimeEntry.id
+        id: activeEntry.id
       },
       data: {
         clockOutTime: new Date(),
-        note: note || activeTimeEntry.note // Keep existing note if no new note provided
+        note: note || null
       }
     });
-
-    // Check if this was the last time entry for the shift
-    const remainingActiveEntries = await prisma.timeEntry.count({
+    
+    // End the shift
+    await prisma.shift.update({
       where: {
-        shiftId: activeTimeEntry.shiftId,
-        clockOutTime: null
+        id: activeShift.id
+      },
+      data: {
+        endTime: new Date()
       }
     });
-
-    // If no more active entries, end the shift
-    if (remainingActiveEntries === 0) {
-      await prisma.shift.update({
-        where: {
-          id: activeTimeEntry.shiftId
-        },
-        data: {
-          endTime: new Date()
-        }
-      });
-    }
-
+    
     return NextResponse.json({
-      timeEntry: updatedTimeEntry,
-      message: 'Successfully clocked out'
+      success: true,
+      timeEntry: updatedEntry
     });
-
+    
   } catch (error) {
-    console.error('Error clocking out:', error);
-    return NextResponse.json(
-      { message: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Clock out failed:', error);
+    return NextResponse.json({ 
+      error: 'Clock out failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
-};
+}
