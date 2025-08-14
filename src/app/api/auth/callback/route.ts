@@ -19,14 +19,16 @@ export async function GET(request: NextRequest) {
       errorDescription,
     });
     
+    const baseUrl = process.env.AUTH0_BASE_URL;
+    
     if (error) {
       console.error('Auth0 error:', error, errorDescription);
-      return NextResponse.redirect(`http://localhost:3000?error=${error}&description=${errorDescription || ''}`);
+      return NextResponse.redirect(`${baseUrl}?error=${error}&description=${errorDescription || ''}`);
     }
     
     if (!code) {
       console.error('No authorization code received');
-      return NextResponse.redirect('http://localhost:3000?error=no_code');
+      return NextResponse.redirect(`${baseUrl}?error=no_code`);
     }
     
     console.log('Exchanging code for tokens...');
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
     const issuerUrl = process.env.AUTH0_ISSUER_BASE_URL;
     const clientId = process.env.AUTH0_CLIENT_ID;
     const clientSecret = process.env.AUTH0_CLIENT_SECRET;
-    const redirectUri = 'http://localhost:3000/api/auth/callback';
+    const redirectUri = `${baseUrl}/api/auth/callback`;
     
     // Exchange code for tokens
     const tokenResponse = await fetch(`${issuerUrl}/oauth/token`, {
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
     
     if (tokens.error) {
       console.error('Token exchange failed:', tokens);
-      return NextResponse.redirect(`http://localhost:3000?error=token_exchange_failed&details=${tokens.error}`);
+      return NextResponse.redirect(`${baseUrl}?error=token_exchange_failed&details=${tokens.error}`);
     }
     
     console.log('Getting user info...');
@@ -131,24 +133,24 @@ export async function GET(request: NextRequest) {
     console.log('Enhanced user object:', enhancedUser);
     
     // Determine redirect URL based on user status
-    let redirectUrl = 'http://localhost:3000';
+    let redirectUrl = baseUrl;
     
     if (isNewUser || !dbUser.role || !dbUser.locationId) {
       // New user or incomplete profile - redirect to onboarding
-      redirectUrl = 'http://localhost:3000/onboarding';
+      redirectUrl = `${baseUrl}/onboarding`;
       console.log('Redirecting to onboarding');
     } else {
       // Existing user with complete profile - redirect based on role
       switch (dbUser.role) {
         case 'CARE_WORKER':
-          redirectUrl = 'http://localhost:3000/worker';
+          redirectUrl = `${baseUrl}/worker`;
           break;
         case 'MANAGER':
         case 'ADMIN':
-          redirectUrl = 'http://localhost:3000/manager';
+          redirectUrl = `${baseUrl}/manager`;
           break;
         default:
-          redirectUrl = 'http://localhost:3000/onboarding';
+          redirectUrl = `${baseUrl}/onboarding`;
       }
       console.log('Redirecting to dashboard:', redirectUrl);
     }
@@ -169,6 +171,7 @@ export async function GET(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('Callback error:', error);
-    return NextResponse.redirect('http://localhost:3000?error=callback_failed');
+    const baseUrl = process.env.AUTH0_BASE_URL || 'http://localhost:3000';
+    return NextResponse.redirect(`${baseUrl}?error=callback_failed`);
   }
 } 

@@ -6,7 +6,8 @@ export async function GET() {
     
     const issuerUrl = process.env.AUTH0_ISSUER_BASE_URL;
     const clientId = process.env.AUTH0_CLIENT_ID;
-    const redirectUri = 'http://localhost:3000/api/auth/callback';
+    const baseUrl = process.env.AUTH0_BASE_URL ;
+    const redirectUri = `${baseUrl}/api/auth/callback`;
     
     console.log('Environment Variables:', {
       issuerUrl,
