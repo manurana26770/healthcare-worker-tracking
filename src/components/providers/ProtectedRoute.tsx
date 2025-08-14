@@ -48,7 +48,7 @@ export function ProtectedRoute({
     return (
       <Box align="center" justify="center" fill gap="medium">
         <Heading level="2">Access Denied</Heading>
-        <Text>You don't have permission to access this page.</Text>
+        <Text>You don&apos;t have permission to access this page.</Text>
         <Button 
           label="Go Back" 
           onClick={() => router.back()} 

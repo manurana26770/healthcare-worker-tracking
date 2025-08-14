@@ -20,12 +20,10 @@ import {
   Tabs,
   Tab,
   Spinner,
-  Stack,
-  Meter,
   Accordion,
   AccordionPanel
 } from 'grommet';
-import { Add, Edit, Trash, Location, User, Clock, Analytics, Refresh, MapPin, Calendar } from 'grommet-icons';
+import { Add, Edit, Trash, Location, User, Clock, Analytics, Refresh } from 'grommet-icons';
 
 interface User {
   id: string;
@@ -125,7 +123,6 @@ interface OverallStats {
 }
 
 export default function ManagerPage() {
-  const router = useRouter();
   const { logout } = useAuth0();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -164,7 +161,7 @@ export default function ManagerPage() {
       fetchAnalytics();
       fetchStaffTimeEntries();
     }
-  }, [currentUser]);
+  }, [currentUser, fetchLocations, fetchStaffMembers, fetchAnalytics, fetchStaffTimeEntries]);
 
   const checkUserSession = async () => {
     try {

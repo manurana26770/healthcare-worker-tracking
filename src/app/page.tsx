@@ -20,8 +20,7 @@ interface User {
 }
 
 export default function HomePage() {
-  const router = useRouter();
-  const { user, isLoading, logout } = useAuth0();
+  const { isLoading, logout } = useAuth0();
   const [localUser, setLocalUser] = useState<User | null>(null);
 
   // Update local user when Auth0 user changes

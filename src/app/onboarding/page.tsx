@@ -111,7 +111,7 @@ export default function OnboardingPage() {
 
       <Main flex="grow" pad="large">
         <Box align="center" justify="center" height="100%" gap="medium">
-          <Heading level="1">Welcome! Let's set up your profile</Heading>
+          <Heading level="1">Welcome! Let&apos;s set up your profile</Heading>
           <Text size="large" textAlign="center">
             Please select your role and location to complete your setup
           </Text>

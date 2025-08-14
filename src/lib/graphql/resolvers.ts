@@ -2,6 +2,17 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Type definitions for GraphQL resolvers
+type GraphQLContext = {
+  prisma: PrismaClient;
+};
+
+type ResolverArgs<T = Record<string, unknown>> = {
+  [K in keyof T]: T[K];
+};
+
+type ResolverParent = Record<string, unknown>;
+
 export const resolvers = {
   Query: {
     users: async () => {
@@ -14,7 +25,7 @@ export const resolvers = {
       });
     },
 
-    user: async (_: any, { id }: { id: string }) => {
+    user: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
       return await prisma.user.findUnique({
         where: { id },
         include: {
@@ -34,7 +45,7 @@ export const resolvers = {
       });
     },
 
-    location: async (_: any, { id }: { id: string }) => {
+    location: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
       return await prisma.location.findUnique({
         where: { id },
         include: {
@@ -55,7 +66,7 @@ export const resolvers = {
       });
     },
 
-    shift: async (_: any, { id }: { id: string }) => {
+    shift: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
       return await prisma.shift.findUnique({
         where: { id },
         include: {
@@ -75,7 +86,7 @@ export const resolvers = {
       });
     },
 
-    timeEntry: async (_: any, { id }: { id: string }) => {
+    timeEntry: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
       return await prisma.timeEntry.findUnique({
         where: { id },
         include: {
@@ -84,7 +95,7 @@ export const resolvers = {
       });
     },
 
-    currentShift: async (_: any, { userId }: { userId: string }) => {
+    currentShift: async (_: ResolverParent, { userId }: ResolverArgs<{ userId: string }>) => {
       return await prisma.shift.findFirst({
         where: {
           userId: userId,
@@ -108,7 +119,7 @@ export const resolvers = {
       });
     },
 
-    userTimeEntries: async (_: any, { userId }: { userId: string }) => {
+    userTimeEntries: async (_: ResolverParent, { userId }: ResolverArgs<{ userId: string }>) => {
       return await prisma.timeEntry.findMany({
         where: {
           shift: {

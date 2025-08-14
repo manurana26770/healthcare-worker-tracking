@@ -23,7 +23,10 @@ export async function GET(request: NextRequest) {
     }
     
     // Build the where clause
-    const whereClause: any = {
+    const whereClause: {
+      isActive: boolean;
+      id?: string;
+    } = {
       isActive: true
     };
     

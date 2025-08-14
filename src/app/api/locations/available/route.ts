@@ -4,7 +4,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // GET available locations for signup (public endpoint)
-export const GET = async (request: NextRequest) => {
+export const GET = async () => {
   try {
     // Get all active locations for signup
     const locations = await prisma.location.findMany({
