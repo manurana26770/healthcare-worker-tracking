@@ -137,7 +137,7 @@ export function useGeolocation() {
   // Check proximity to multiple locations and return the closest one within radius
   const findNearestLocationWithinRadius = (
     locations: Array<{ latitude: number; longitude: number; radius: number; id: string; name: string }>
-  ): { location: any; distance: number } | null => {
+  ): { location: Record<string, unknown>; distance: number } | null => {
     if (!state.location) return null;
 
     let nearestLocation = null;

@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     
     // Build the where clause based on user role and location
     const whereClause: {
-      role: string;
+      role: 'CARE_WORKER';
       locationId?: string;
     } = {
       role: 'CARE_WORKER' // Only show care workers, not managers

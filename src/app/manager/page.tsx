@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+
 import { useAuth0 } from '@/context/Auth0Context';
 import {
   Box,
@@ -92,7 +92,11 @@ interface StaffTimeEntry {
   name: string;
   email: string;
   role: string;
-  location: any;
+  location: {
+    id: string;
+    name: string;
+    address: string;
+  } | null;
   timeEntries: TimeEntry[];
   totalHours: number;
   isCurrentlyClockedIn: boolean;
@@ -161,7 +165,7 @@ export default function ManagerPage() {
       fetchAnalytics();
       fetchStaffTimeEntries();
     }
-  }, [currentUser, fetchLocations, fetchStaffMembers, fetchAnalytics, fetchStaffTimeEntries]);
+  }, [currentUser]);
 
   const checkUserSession = async () => {
     try {

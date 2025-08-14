@@ -60,8 +60,12 @@ export async function GET(request: NextRequest) {
       name: string;
       email: string;
       role: string;
-      location: any;
-      timeEntries: any[];
+      location: {
+        id: string;
+        name: string;
+        address: string;
+      } | null;
+      timeEntries: Record<string, unknown>[];
       totalHours: number;
       isCurrentlyClockedIn: boolean;
     }>();
@@ -119,7 +123,7 @@ export async function GET(request: NextRequest) {
         ...staff,
         totalHours: Math.round(staff.totalHours * 100) / 100,
         timeEntries: staff.timeEntries.sort((a, b) => 
-          new Date(b.clockInTime).getTime() - new Date(a.clockInTime).getTime()
+          new Date(b.clockInTime as string).getTime() - new Date(a.clockInTime as string).getTime()
         )
       }))
       .sort((a, b) => a.name.localeCompare(b.name));

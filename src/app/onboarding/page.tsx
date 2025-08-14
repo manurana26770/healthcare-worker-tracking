@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Box, Button, Heading, Text, Main, Header, Footer, Select, FormField, Form } from 'grommet';
-import { User, MapLocation } from 'grommet-icons';
+import { User } from 'grommet-icons';
 import { useRouter } from 'next/navigation';
 
 interface Location {
@@ -47,15 +47,15 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleSubmit = async (value: any) => {
+  const handleSubmit = async (value: { role?: string | { value: string }; locationId?: string | { value: string } }) => {
     setIsSubmitting(true);
     try {
       console.log('Form value received:', value);
       
       // Extract the actual values from the select options
       const onboardingData = {
-        role: typeof value.role === 'object' ? value.role.value : value.role,
-        locationId: typeof value.locationId === 'object' ? value.locationId.value : value.locationId
+        role: typeof value.role === 'object' ? (value.role as { value: string }).value : value.role,
+        locationId: typeof value.locationId === 'object' ? (value.locationId as { value: string }).value : value.locationId
       };
       
       console.log('Processed onboarding data:', onboardingData);

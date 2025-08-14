@@ -2,20 +2,11 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Type definitions for GraphQL resolvers
-type GraphQLContext = {
-  prisma: PrismaClient;
-};
 
-type ResolverArgs<T = Record<string, unknown>> = {
-  [K in keyof T]: T[K];
-};
-
-type ResolverParent = Record<string, unknown>;
 
 export const resolvers = {
   Query: {
-    users: async () => {
+    users: async (_: any) => {
       return await prisma.user.findMany({
         include: {
           location: true,
@@ -25,7 +16,7 @@ export const resolvers = {
       });
     },
 
-    user: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
+    user: async (_: any, { id }: { id: string }) => {
       return await prisma.user.findUnique({
         where: { id },
         include: {
@@ -36,7 +27,7 @@ export const resolvers = {
       });
     },
 
-    locations: async () => {
+    locations: async (_: any) => {
       return await prisma.location.findMany({
         include: {
           users: true,
@@ -45,7 +36,7 @@ export const resolvers = {
       });
     },
 
-    location: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
+    location: async (_: any, { id }: { id: string }) => {
       return await prisma.location.findUnique({
         where: { id },
         include: {
@@ -55,7 +46,7 @@ export const resolvers = {
       });
     },
 
-    shifts: async () => {
+    shifts: async (_: any) => {
       return await prisma.shift.findMany({
         include: {
           user: true,
@@ -66,7 +57,7 @@ export const resolvers = {
       });
     },
 
-    shift: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
+    shift: async (_: any, { id }: { id: string }) => {
       return await prisma.shift.findUnique({
         where: { id },
         include: {
@@ -78,7 +69,7 @@ export const resolvers = {
       });
     },
 
-    timeEntries: async () => {
+    timeEntries: async (_: any) => {
       return await prisma.timeEntry.findMany({
         include: {
           shift: true,
@@ -86,7 +77,7 @@ export const resolvers = {
       });
     },
 
-    timeEntry: async (_: ResolverParent, { id }: ResolverArgs<{ id: string }>) => {
+    timeEntry: async (_: any, { id }: { id: string }) => {
       return await prisma.timeEntry.findUnique({
         where: { id },
         include: {
@@ -95,7 +86,7 @@ export const resolvers = {
       });
     },
 
-    currentShift: async (_: ResolverParent, { userId }: ResolverArgs<{ userId: string }>) => {
+    currentShift: async (_: any, { userId }: { userId: string }) => {
       return await prisma.shift.findFirst({
         where: {
           userId: userId,
@@ -119,7 +110,7 @@ export const resolvers = {
       });
     },
 
-    userTimeEntries: async (_: ResolverParent, { userId }: ResolverArgs<{ userId: string }>) => {
+    userTimeEntries: async (_: any, { userId }: { userId: string }) => {
       return await prisma.timeEntry.findMany({
         where: {
           shift: {

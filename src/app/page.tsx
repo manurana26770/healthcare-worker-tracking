@@ -2,7 +2,7 @@
 
 import { Box, Button, Heading, Text, Main, Header, Footer } from 'grommet';
 import { Login, Logout, User, Add } from 'grommet-icons';
-import { useRouter } from 'next/navigation';
+
 import { useEffect, useState } from 'react';
 import { useAuth0 } from '@/context/Auth0Context';
 
