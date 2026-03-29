@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import "./auth/types/express-auth.types"; // Register Express request type augmentation
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
