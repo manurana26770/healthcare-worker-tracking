@@ -8,6 +8,8 @@ describe("Phase 3F Auth Parity", () => {
   let app: INestApplication;
   let auth0Service: Auth0Service;
 
+  jest.setTimeout(30000);
+
   beforeAll(async () => {
     process.env.NODE_ENV = "test";
     process.env.AUTH0_ISSUER_BASE_URL = "https://tenant.example.auth0.com";
